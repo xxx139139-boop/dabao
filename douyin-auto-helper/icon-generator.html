@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大宝抖音助手 - 图标生成工具</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: #161823;
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #FE2C55;
+            margin-bottom: 30px;
+        }
+        
+        .icon-container {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+        
+        .icon-item {
+            text-align: center;
+        }
+        
+        .icon-item h3 {
+            color: #8A8B99;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        canvas {
+            border: 2px solid #3A3C4A;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .download-btn {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #FE2C55;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        
+        .download-btn:hover {
+            background: #FF4766;
+        }
+        
+        .instructions {
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #252733;
+            border-radius: 8px;
+            text-align: left;
+            line-height: 1.6;
+        }
+        
+        .instructions h3 {
+            color: #FE2C55;
+            margin-top: 0;
+        }
+        
+        .instructions ol {
+            color: #8A8B99;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 10px 0;
+        }
+        
+        .instructions code {
+            background: #161823;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #FE2C55;
+        }
+    </style>
+</head>
+<body>
+    <h1>大宝抖音自动中控助手 - 图标生成工具</h1>
+    
+    <div class="icon-container">
+        <div class="icon-item">
+            <h3>16x16px (icon16.png)</h3>
+            <canvas id="canvas16" width="16" height="16"></canvas>
+            <br>
+            <button class="download-btn" onclick="downloadIcon(16)">下载</button>
+        </div>
+        
+        <div class="icon-item">
+            <h3>48x48px (icon48.png)</h3>
+            <canvas id="canvas48" width="48" height="48"></canvas>
+            <br>
+            <button class="download-btn" onclick="downloadIcon(48)">下载</button>
+        </div>
+        
+        <div class="icon-item">
+            <h3>128x128px (icon128.png)</h3>
+            <canvas id="canvas128" width="128" height="128"></canvas>
+            <br>
+            <button class="download-btn" onclick="downloadIcon(128)">下载</button>
+        </div>
+    </div>
+    
+    <div class="instructions">
+        <h3>使用说明</h3>
+        <ol>
+            <li>点击上方的"下载"按钮下载三个尺寸的图标</li>
+            <li>将下载的文件重命名为：
+                <ul>
+                    <li><code>icon16.png</code></li>
+                    <li><code>icon48.png</code></li>
+                    <li><code>icon128.png</code></li>
+                </ul>
+            </li>
+            <li>将三个文件放入项目的 <code>icons/</code> 文件夹中</li>
+            <li>重新加载扩展程序即可看到新图标</li>
+        </ol>
+    </div>
+    
+    <script>
+        function drawIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // 清除画布
+            ctx.clearRect(0, 0, size, size);
+            
+            // 绘制红色圆形背景
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#FE2C55';
+            ctx.fill();
+            
+            // 绘制白色"宝"字
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${size * 0.6}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('宝', size / 2, size / 2 + size * 0.05);
+        }
+        
+        function downloadIcon(size) {
+            const canvas = document.getElementById(`canvas${size}`);
+            const link = document.createElement('a');
+            link.download = `icon${size}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // 初始化绘制所有图标
+        window.onload = function() {
+            drawIcon('canvas16', 16);
+            drawIcon('canvas48', 48);
+            drawIcon('canvas128', 128);
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+/**
+ * 日志面板样式
+ */
+
+@import 'variables.css';
+
+/* 日志区块 */
+.log-section {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 150px;
+  max-height: 300px;
+}
+
+.log-section .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.log-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.log-section .section-icon {
+  font-size: var(--font-size-lg);
+}
+
+.log-section .btn-clear-logs {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.log-section .btn-clear-logs:hover {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: white;
+}
+
+/* 日志容器 */
+.log-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+/* 自定义滚动条 */
+.log-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.log-container::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* 日志项 */
+.log-item {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  animation: slideIn var(--transition-fast);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.log-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 日志时间 */
+.log-time {
+  color: var(--color-text-muted);
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 日志类型标识 */
+.log-type {
+  width: 4px;
+  height: 100%;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.log-item.success .log-type {
+  background: var(--color-success);
+}
+
+.log-item.warning .log-type {
+  background: var(--color-warning);
+}
+
+.log-item.error .log-type {
+  background: var(--color-error);
+}
+
+.log-item.info .log-type {
+  background: var(--color-info);
+}
+
+/* 日志内容 */
+.log-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-message {
+  color: var(--color-text-primary);
+}
+
+.log-data {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+}
+
+/* 来源标签 */
+.log-source {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* 空状态 */
+.log-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}

@@ -1,0 +1,75 @@
+  // 检查在线人数
+  checkViewersCount() {
+    try {
+      let viewers = 0;
+      let found = false;
+      
+      // 方法1：使用选择器
+      const selectors = [
+        '[data-e2e="live-room"] [class*="online"]',
+        '[data-e2e="live-room"] span',
+        '.room-header [class*="online"]',
+        '.room-header span',
+        '.audience-info',
+        '[class*="audience"]',
+        '[class*="viewer"]',
+        '[class*="online"]'
+      ];
+      
+      for (const selector of selectors) {
+        try {
+          const el = document.querySelector(selector);
+          if (el) {
+            const text = el.textContent.trim();
+            const match = text.match(/(\d+\.?\d*)/);
+            if (match) {
+              let num = parseFloat(match[1]);
+              if (text.includes('万')) num = num * 10000;
+              if (num > 0) {
+                viewers = Math.floor(num);
+                found = true;
+                console.log('[大宝抖音助手] 获取在线人数:', viewers);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      
+      // 方法2：遍历所有文本节点
+      if (!found) {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while (node = walker.nextNode()) {
+          const text = node.textContent.trim();
+          if (text.match(/在线|观众|人气|观看/i) && text.match(/\d+/)) {
+            const match = text.match(/(\d+\.?\d*)/);
+            if (match) {
+              let num = parseFloat(match[1]);
+              if (text.includes('万')) num = num * 10000;
+              if (num > 10 && num < 10000000) {
+                viewers = Math.floor(num);
+                console.log('[大宝抖音助手] 从文本获取在线人数:', viewers);
+                found = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // 更新显示
+      if (viewers > 0 || this.monitorState.maxViewers > 0) {
+        if (viewers > this.monitorState.maxViewers) {
+          this.monitorState.maxViewers = viewers;
+        }
+        
+        const viewersEl = this.element.querySelector('#max-viewers');
+        if (viewersEl) {
+          viewersEl.textContent = this.formatNumber(this.monitorState.maxViewers) + '人';
+        }
+      }
+    } catch (error) {
+      console.log('[大宝抖音助手] 获取在线人数失败:', error);
+    }
+  }

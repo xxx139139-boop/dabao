@@ -1,0 +1,100 @@
+/**
+ * 浮动按钮样式
+ */
+
+@import 'variables.css';
+
+/* 浮动按钮容器 */
+.douyin-helper-floating-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  border: none;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: white;
+  z-index: 9998;
+  transition: all var(--transition-normal);
+  user-select: none;
+}
+
+.douyin-helper-floating-btn:hover {
+  transform: scale(1.1);
+  background: var(--color-accent-hover);
+  box-shadow: 0 6px 20px rgba(254, 44, 85, 0.4);
+}
+
+.douyin-helper-floating-btn:active {
+  transform: scale(0.95);
+  background: var(--color-accent-active);
+}
+
+/* 状态指示器 */
+.douyin-helper-floating-btn .status-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  border: 2px solid var(--color-accent);
+  transition: background var(--transition-fast);
+}
+
+.douyin-helper-floating-btn.running .status-indicator {
+  background: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success);
+}
+
+/* 提示文字 */
+.douyin-helper-floating-btn .tooltip {
+  position: absolute;
+  right: 64px;
+  bottom: 50%;
+  transform: translateY(50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all var(--transition-fast);
+}
+
+.douyin-helper-floating-btn:hover .tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 动画 */
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(254, 44, 85, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(254, 44, 85, 0);
+  }
+}
+
+.douyin-helper-floating-btn.running {
+  animation: pulse 2s infinite;
+}
+
+/* 隐藏状态（侧边栏展开时） */
+.douyin-helper-floating-btn.hidden {
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
