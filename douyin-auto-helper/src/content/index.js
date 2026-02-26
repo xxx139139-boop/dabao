@@ -1,5 +1,5 @@
 /**
- * 大宝抖音AI托评助手 v2.2.2
+ * 大宝抖音AI托评助手 v2.2.0
  * Content Script - 主入口文件
  * 功能：自动点赞 + AI智能评论（接入DeepSeek）+ 会员系统
  */
@@ -57,7 +57,7 @@
         aiApiKey: 'sk-db818c2234504dd8a0723772aae6e420',
         sidebarWidth: 400,
         sidebarCollapsed: false,
-        serverUrl: 'https://dabao123.cpolar.top',  // 会员服务器地址（固定域名，无需修改）
+        serverUrl: '',  // 会员服务器地址，例如 https://xxxxx.cpolar.cn
         machineCode: '' // 本机唯一识别码（自动生成）
       };
     }
@@ -94,9 +94,13 @@
     static emit(event, data) { window.dispatchEvent(new CustomEvent(`douyin-helper:${event}`, { detail: data })); }
   }
 
-  // ==================== 机器码 & 离线授权系统 ====================
+  // ==================== 机器码 & 会员服务 ====================
 
   class MachineCode {
+    /**
+     * 生成稳定的浏览器唯一识别码
+     * 基于浏览器特征哈希，同一台电脑同一Chrome不变
+     */
     static generate() {
       const features = [
         navigator.userAgent,
@@ -108,17 +112,20 @@
         navigator.platform || '',
         screen.pixelDepth || 24
       ].join('|');
+      // 简单哈希函数（不依赖外部库）
       let hash = 0;
       for (let i = 0; i < features.length; i++) {
         const char = features.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
+        hash = hash & hash; // 转为32位整数
       }
       const h = Math.abs(hash).toString(16).padStart(8, '0').toUpperCase();
+      // 格式化为 XXXX-XXXX-XXXX-XXXX
       const raw = (h + h + h + h).substring(0, 16);
       return `${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}`;
     }
     static async getOrCreate() {
+      // 优先从存储中读取，确保稳定性
       const saved = await Storage.get('machineCode');
       if (saved) return saved;
       const code = this.generate();
@@ -127,95 +134,18 @@
     }
   }
 
-  /**
-   * 离线授权系统
-   * 授权信息通过打包工具写入 license.js，扩展启动时读取并验证
-   * 验证逻辑：机器码匹配 + 到期时间校验 + 防篡改哈希校验
-   */
-  class LicenseAuth {
-    // 简单哈希（与打包工具保持一致）
-    static simpleHash(str) {
-      let h = 5381;
-      for (let i = 0; i < str.length; i++) {
-        h = ((h << 5) + h) ^ str.charCodeAt(i);
-        h = h >>> 0;
-      }
-      return h.toString(16).padStart(8, '0');
-    }
-
-    // XOR解密（与打包工具保持一致）
-    static xorDecrypt(encoded, key) {
+  class MemberService {
+    static async checkStatus(serverUrl, machineCode) {
+      if (!serverUrl || !machineCode) return { isVip: false, expireFormatted: null };
       try {
-        const bytes = atob(encoded);
-        let result = '';
-        for (let i = 0; i < bytes.length; i++) {
-          result += String.fromCharCode(bytes.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-        }
-        return result;
-      } catch(e) {
-        return null;
-      }
-    }
-
-    static async verify(machineCode) {
-      try {
-        // 读取内嵌授权数据（由打包工具写入）
-        const licenseUrl = chrome.runtime.getURL('src/license.js');
-        const resp = await fetch(licenseUrl);
-        const text = await resp.text();
-
-        // 解析授权数据
-        const match = text.match(/window\.__LICENSE__\s*=\s*(\{[\s\S]*?\});/);
-        if (!match) return { isVip: false, reason: 'no_license' };
-
-        const lic = JSON.parse(match[1]);
-        if (!lic || !lic.d || !lic.m || !lic.c) return { isVip: false, reason: 'invalid_license' };
-
-        // 解密到期时间
-        const key = lic.m.substring(0, 8) + 'DB2025';
-        const decrypted = this.xorDecrypt(lic.d, key);
-        if (!decrypted) return { isVip: false, reason: 'decrypt_failed' };
-
-        let licData;
-        try { licData = JSON.parse(decrypted); } catch(e) { return { isVip: false, reason: 'parse_failed' }; }
-
-        // 验证机器码
-        if (licData.code !== machineCode) {
-          return { isVip: false, reason: 'machine_mismatch' };
-        }
-
-        // 验证防篡改哈希
-        const checkStr = licData.code + licData.expire + licData.salt;
-        const expectedHash = this.simpleHash(checkStr);
-        if (lic.c !== expectedHash) {
-          return { isVip: false, reason: 'tampered' };
-        }
-
-        // 验证到期时间（本地时间 + 网络时间双重校验）
-        const now = Date.now();
-        const expireTs = licData.expire;
-        if (now > expireTs) {
-          return { isVip: false, reason: 'expired', expireAt: expireTs };
-        }
-
-        // 尝试网络时间校验（防改系统时间）
-        try {
-          const timeResp = await fetch('https://worldtimeapi.org/api/ip', { signal: AbortSignal.timeout(3000) });
-          if (timeResp.ok) {
-            const timeData = await timeResp.json();
-            const netNow = new Date(timeData.datetime).getTime();
-            if (netNow > expireTs) {
-              return { isVip: false, reason: 'expired_net', expireAt: expireTs };
-            }
-          }
-        } catch(e) {
-          // 网络时间获取失败，仅用本地时间（可接受）
-        }
-
-        return { isVip: true, expireAt: expireTs, machineCode: licData.code };
-      } catch(e) {
-        console.warn('[大宝AI助手] 授权验证异常:', e);
-        return { isVip: false, reason: 'error' };
+        const url = `${serverUrl.replace(/\/$/, '')}/api/member/status?code=${encodeURIComponent(machineCode)}`;
+        const response = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(8000) });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        return { isVip: data.isVip || false, expireFormatted: data.expireFormatted || null, expireAt: data.expireAt || null };
+      } catch (err) {
+        console.warn('[大宝AI助手] 会员状态查询失败:', err.message);
+        return { isVip: false, expireFormatted: null, error: err.message };
       }
     }
   }
@@ -926,11 +856,8 @@
         <div class="resize-handle"></div>
         <div class="sidebar-header">
           <div class="title-area">
-            <div style="display:flex;flex-direction:column;gap:1px;">
-              <h3 class="title">大宝抖音AI托评助手</h3>
-              <span style="font-size:10px;color:#64748b;letter-spacing:0.2px;">1361098634@qq.com</span>
-            </div>
-            <span class="version-tag">v3.0.0</span>
+            <h3 class="title">大宝抖音AI托评助手</h3>
+            <span class="version-tag">v2.2.0</span>
           </div>
           <div class="header-right">
             <div class="member-avatar" id="member-avatar" title="点击查看会员信息">
@@ -1025,6 +952,12 @@
             <div class="log-container" id="log-container">
               <div class="log-empty">暂无日志</div>
             </div>
+          </div>
+        </div>
+        <div class="server-config-section">
+          <div class="server-config-row">
+            <span class="server-config-label">🌐 服务器地址</span>
+            <input type="text" id="server-url" class="server-url-input" placeholder="https://xxxxx.cpolar.cn" autocomplete="off">
           </div>
         </div>
         <div class="sidebar-footer">
@@ -1318,6 +1251,7 @@
       const likeMax = parseInt(this.element.querySelector('#like-max').value) || 50;
       const commentInterval = parseInt(this.element.querySelector('#comment-interval').value) || 90;
       const aiPrompt = this.element.querySelector('#ai-prompt').value.trim();
+      const serverUrl = (this.element.querySelector('#server-url').value || '').trim();
       return {
         likeEnabled: this.element.querySelector('#like-toggle').checked,
         likeMinPerMinute: Math.min(likeMin, likeMax),
@@ -1325,6 +1259,7 @@
         aiCommentEnabled: this.element.querySelector('#ai-comment-toggle').checked,
         commentInterval,
         aiPrompt,
+        serverUrl,
         sidebarWidth: this.config.width,
         sidebarCollapsed: this.config.collapsed
       };
@@ -1334,32 +1269,20 @@
       if (config.likeMaxPerMinute !== undefined) this.element.querySelector('#like-max').value = Math.max(20, config.likeMaxPerMinute);
       if (config.commentInterval !== undefined) this.element.querySelector('#comment-interval').value = config.commentInterval;
       if (config.aiPrompt) this.element.querySelector('#ai-prompt').value = config.aiPrompt;
-      // serverUrl 已移除，无需设置
+      if (config.serverUrl !== undefined) this.element.querySelector('#server-url').value = config.serverUrl || '';
     }
-    updateMemberStatus(isVip, expireFormatted, machineCode, expired) {
+    updateMemberStatus(isVip, expireFormatted, machineCode) {
       const avatarEl = this.element.querySelector('#member-avatar');
       const labelEl = this.element.querySelector('#avatar-label');
       const lockEl = this.element.querySelector('#vip-lock');
       if (!avatarEl || !labelEl) return;
       if (isVip) {
         avatarEl.classList.add('vip');
-        avatarEl.classList.remove('expired');
         labelEl.textContent = expireFormatted ? `VIP至${expireFormatted}` : 'VIP会员';
-        labelEl.style.color = '';
         if (lockEl) lockEl.classList.add('unlocked');
-      } else if (expired) {
-        avatarEl.classList.remove('vip');
-        avatarEl.classList.add('expired');
-        labelEl.textContent = '已过期请联系开发者';
-        labelEl.style.color = '#FF5252';
-        labelEl.style.fontSize = '8px';
-        if (lockEl) lockEl.classList.remove('unlocked');
       } else {
         avatarEl.classList.remove('vip');
-        avatarEl.classList.remove('expired');
         labelEl.textContent = '免费版';
-        labelEl.style.color = '';
-        labelEl.style.fontSize = '';
         if (lockEl) lockEl.classList.remove('unlocked');
       }
     }
@@ -1460,7 +1383,7 @@
     state.sidebar = new Sidebar({ width: state.config.sidebarWidth || 400, collapsed: state.config.sidebarCollapsed || false });
     state.sidebar.onToggleLike = (enabled) => handleLikeToggle(enabled);
     state.sidebar.onToggleAIComment = (enabled) => handleAICommentToggle(enabled);
-    state.sidebar.onSave = async (config) => { await saveConfig(config); Logger.add({ type: 'success', source: 'system', message: '配置已保存' }); await refreshMemberStatus(); };
+    state.sidebar.onSave = async (config) => { await saveConfig(config); Logger.add({ type: 'success', source: 'system', message: '配置已保存' }); };
     state.sidebar.onReset = async () => { state.sidebar.setConfig(Storage.getDefaultConfig()); Logger.add({ type: 'info', source: 'system', message: '已重置为默认配置' }); };
     // 头像点击：弹出会员信息弹窗
     state.sidebar.onMemberAvatarClick = () => showMemberModal();
@@ -1567,65 +1490,80 @@
   // ==================== 会员系统函数 ====================
 
   function showVipToast() {
-    // 在侧边栏内显示浮动提示
+    // 在侧边栏内显示浮动提示，定位在AI智能评论区块下方
     const shadowRoot = state.sidebar && state.sidebar.shadowRoot;
     if (!shadowRoot) return;
-    let toast = shadowRoot.querySelector('#vip-toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'vip-toast';
-      toast.style.cssText = `
-        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
-        background: linear-gradient(90deg,#FE2C55,#7B68EE);
-        color: white; padding: 10px 18px; border-radius: 20px;
-        font-size: 13px; font-weight: 500; z-index: 99999;
-        box-shadow: 0 4px 20px rgba(254,44,85,.4);
-        white-space: nowrap; pointer-events: none;
-        animation: fadeInUp .3s ease;
-      `;
+
+    // 找到 AI 智能评论区块（.ai-section）
+    const aiSection = shadowRoot.querySelector('.ai-section');
+
+    // 移除旧的 toast（如果存在）
+    const oldToast = shadowRoot.querySelector('#vip-toast');
+    if (oldToast) oldToast.remove();
+
+    // 确保 ai-section 有 position:relative 以便子元素绝对定位
+    if (aiSection) {
+      aiSection.style.position = 'relative';
+    }
+
+    const toast = document.createElement('div');
+    toast.id = 'vip-toast';
+    toast.style.cssText = `
+      position: absolute; top: 100%; left: 0; right: 0;
+      margin-top: 6px;
+      background: linear-gradient(90deg,#FE2C55,#7B68EE);
+      color: white; padding: 10px 14px; border-radius: 8px;
+      font-size: 12px; font-weight: 500; z-index: 99999;
+      box-shadow: 0 4px 20px rgba(254,44,85,.4);
+      text-align: center; pointer-events: none;
+      animation: fadeInDown .3s ease;
+    `;
+
+    // 注入动画样式（只注入一次）
+    if (!shadowRoot.querySelector('#vip-toast-style')) {
       const style = document.createElement('style');
-      style.textContent = '@keyframes fadeInUp{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+      style.id = 'vip-toast-style';
+      style.textContent = '@keyframes fadeInDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}';
       shadowRoot.appendChild(style);
+    }
+
+    // 将 toast 插入 ai-section 内部（作为最后一个子元素）
+    if (aiSection) {
+      aiSection.appendChild(toast);
+    } else {
+      // 降级：插入 shadowRoot
       shadowRoot.appendChild(toast);
     }
+
     toast.textContent = '🔒 AI智能评论为会员专属，请点击右上角头像升级会员';
-    toast.style.display = 'block';
     clearTimeout(state._vipToastTimer);
-    state._vipToastTimer = setTimeout(() => { toast.style.display = 'none'; }, 3500);
+    state._vipToastTimer = setTimeout(() => { toast.remove(); }, 3500);
   }
 
   async function refreshMemberStatus() {
     try {
       const machineCode = await MachineCode.getOrCreate();
       state.machineCode = machineCode;
-
-      // 离线授权验证
-      const authResult = await LicenseAuth.verify(machineCode);
-      const isVip = authResult.isVip;
-      const isExpired = !isVip && authResult.reason && (authResult.reason === 'expired' || authResult.reason === 'expired_net');
-
-      state.memberStatus = {
-        isVip,
-        expireAt: authResult.expireAt || null,
-        expired: isExpired,
-        reason: authResult.reason || null
-      };
-
+      const serverUrl = state.config.serverUrl || '';
+      const memberStatus = await MemberService.checkStatus(serverUrl, machineCode);
+      state.memberStatus = memberStatus;
       if (state.sidebar) {
+        // 格式化到期日期：显示年月日
         let expireLabel = null;
-        if (isVip && authResult.expireAt) {
-          const d = new Date(authResult.expireAt);
+        if (memberStatus.isVip && memberStatus.expireAt) {
+          const d = new Date(memberStatus.expireAt);
           expireLabel = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
         }
-        state.sidebar.updateMemberStatus(isVip, expireLabel, machineCode, isExpired);
+        state.sidebar.updateMemberStatus(memberStatus.isVip, expireLabel, machineCode);
       }
     } catch (e) {
-      console.warn('[大宝AI助手] 授权验证失败:', e);
+      console.warn('[大宝AI助手] 会员状态初始化失败:', e);
       state.memberStatus = { isVip: false };
     }
   }
 
   function showMemberModal() {
+    // 在 Shadow DOM 内创建会员信息弹窗
     const shadowRoot = state.sidebar && state.sidebar.shadowRoot;
     if (!shadowRoot) return;
     const existing = shadowRoot.querySelector('#member-modal-overlay');
@@ -1633,28 +1571,14 @@
 
     const machineCode = state.machineCode || '生成中...';
     const isVip = state.memberStatus && state.memberStatus.isVip;
-    const isExpired = state.memberStatus && state.memberStatus.expired;
     let expireLabel = '未开通';
     if (isVip && state.memberStatus.expireAt) {
       const d = new Date(state.memberStatus.expireAt);
       expireLabel = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
     }
 
+    // 导入微信二维码图片（base64内嵌）
     const qrSrc = chrome.runtime.getURL('images/wechat_qr.png');
-
-    // 状态颜色和文字
-    let statusColor = '#7B68EE';
-    let statusText = '免费版';
-    let statusSub = 'AI智能评论功能需升级会员';
-    if (isVip) {
-      statusColor = '#FFC107';
-      statusText = '⭐ VIP会员';
-      statusSub = `到期：${expireLabel}`;
-    } else if (isExpired) {
-      statusColor = '#FF5252';
-      statusText = '已过期';
-      statusSub = '请重新购买套餐开通会员';
-    }
 
     const overlay = document.createElement('div');
     overlay.id = 'member-modal-overlay';
@@ -1662,8 +1586,7 @@
     overlay.innerHTML = `
       <div style="background:#1e2130;border:1px solid #3A3C4A;border-radius:16px;padding:24px;width:320px;max-height:90vh;overflow-y:auto;position:relative;">
         <button id="modal-close" style="position:absolute;top:12px;right:12px;background:transparent;border:none;color:#8A8B99;font-size:20px;cursor:pointer;line-height:1;">×</button>
-        <h3 style="font-size:16px;font-weight:700;background:linear-gradient(90deg,#FE2C55,#7B68EE);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:0 0 4px;">大宝抖音AI托评助手</h3>
-        <div style="font-size:11px;color:#64748b;margin-bottom:14px;">1361098634@qq.com</div>
+        <h3 style="font-size:16px;font-weight:700;background:linear-gradient(90deg,#FE2C55,#7B68EE);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:0 0 16px;">大宝抖音AI托评助手</h3>
         <div style="background:#0f1117;border-radius:10px;padding:14px;margin-bottom:14px;">
           <div style="font-size:11px;color:#64748b;margin-bottom:6px;">本机唯一识别码</div>
           <div style="display:flex;align-items:center;gap:8px;">
@@ -1671,11 +1594,12 @@
             <button id="copy-code-btn" style="background:#252733;border:1px solid #3A3C4A;color:#8A8B99;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap;">复制</button>
           </div>
         </div>
-        <div style="background:${isVip ? 'rgba(255,193,7,.08)' : isExpired ? 'rgba(255,82,82,.08)' : 'rgba(123,104,238,.08)'};border:1px solid ${isVip ? 'rgba(255,193,7,.3)' : isExpired ? 'rgba(255,82,82,.3)' : 'rgba(123,104,238,.3)'};border-radius:10px;padding:12px;margin-bottom:14px;text-align:center;">
+        <div style="background:${isVip ? 'rgba(255,193,7,.08)' : 'rgba(123,104,238,.08)'};border:1px solid ${isVip ? 'rgba(255,193,7,.3)' : 'rgba(123,104,238,.3)'};border-radius:10px;padding:12px;margin-bottom:14px;text-align:center;">
           <div style="font-size:12px;color:#8A8B99;margin-bottom:4px;">当前状态</div>
-          <div style="font-size:16px;font-weight:700;color:${statusColor}">${statusText}</div>
-          <div style="font-size:11px;color:${statusColor};margin-top:4px;opacity:0.8;">${statusSub}</div>
+          <div style="font-size:16px;font-weight:700;color:${isVip ? '#FFC107' : '#7B68EE'}">${isVip ? '⭐ VIP会员' : '免费版'}</div>
+          ${isVip ? `<div style="font-size:11px;color:#FFC107;margin-top:4px;">到期：${expireLabel}</div>` : '<div style="font-size:11px;color:#64748b;margin-top:4px;">AI智能评论功能需升级会员</div>'}
         </div>
+        ${!isVip ? `
         <div style="margin-bottom:14px;">
           <div style="font-size:12px;color:#8A8B99;margin-bottom:8px;text-align:center;">选择套餐</div>
           <div style="display:grid;gap:8px;">
@@ -1693,16 +1617,19 @@
             </div>
           </div>
         </div>
-        <div style="text-align:center;margin-bottom:14px;">
+        <div style="text-align:center;margin-bottom:12px;">
           <div style="font-size:12px;color:#8A8B99;margin-bottom:8px;">扫码加微信，发送识别码和套餐即可开通</div>
           <img src="${qrSrc}" style="width:160px;height:160px;border-radius:8px;border:2px solid #3A3C4A;" onerror="this.style.display='none'">
         </div>
+        ` : ''}
         <div style="display:flex;gap:8px;">
+          <button id="refresh-member-btn" style="flex:1;padding:10px;background:#252733;border:1px solid #3A3C4A;color:#e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">🔄 刷新会员状态</button>
           <button id="modal-close2" style="flex:1;padding:10px;background:linear-gradient(90deg,#FE2C55,#7B68EE);border:none;color:white;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;">确定</button>
         </div>
       </div>
     `;
     shadowRoot.appendChild(overlay);
+    // 事件绑定
     shadowRoot.querySelector('#modal-close').addEventListener('click', () => overlay.remove());
     shadowRoot.querySelector('#modal-close2').addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -1714,6 +1641,7 @@
           copyBtn.style.color = '#00C853';
           setTimeout(() => { copyBtn.textContent = '复制'; copyBtn.style.color = ''; }, 2000);
         }).catch(() => {
+          // 备用方案
           const el = document.createElement('textarea');
           el.value = machineCode;
           document.body.appendChild(el);
@@ -1723,6 +1651,17 @@
           copyBtn.textContent = '已复制✓';
           setTimeout(() => { copyBtn.textContent = '复制'; }, 2000);
         });
+      });
+    }
+    const refreshBtn = shadowRoot.querySelector('#refresh-member-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async () => {
+        refreshBtn.textContent = '查询中...';
+        refreshBtn.disabled = true;
+        await refreshMemberStatus();
+        overlay.remove();
+        // 延迟后重新打开弹窗显示最新状态
+        setTimeout(() => showMemberModal(), 200);
       });
     }
   }
@@ -1752,6 +1691,6 @@
     }
   };
 
-  console.log('[大宝AI助手] v2.2.2 初始化完成，调试接口：DouyinHelper.toggle()');
+  console.log('[大宝AI助手] v2.2.0 初始化完成，调试接口：DouyinHelper.toggle()');
 
 })();
