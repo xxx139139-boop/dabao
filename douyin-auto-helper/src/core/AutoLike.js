@@ -160,80 +160,105 @@ class AutoLike {
    */
   async performLike() {
     try {
-      // 查找直播间红心按钮元素
-      const heartBtn = this.findHeartButton();
-      const container = this.findLiveContainer();
+      // 查找视频元素
       const video = this.findVideoElement();
-      
-      if (!container || !video) {
-        this.log('warning', '未找到直播容器，跳过本次点赞');
+      if (!video) {
+        this.log('warning', '未找到视频元素');
         return;
       }
       
-      const rect = container.getBoundingClientRect();
+      const rect = video.getBoundingClientRect();
       
-      // 计算点击位置
-      let clickX, clickY;
+      // 计算点击位置：视频中央偏下的位置（抖音红心位置）
+      // 抖音直播间红心通常在视频区域中央偏下
+      let clickX = rect.left + rect.width / 2;
+      let clickY = rect.top + rect.height * 0.65;
       
-      if (heartBtn) {
-        // 如果找到红心按钮，点击红心位置
-        const heartRect = heartBtn.getBoundingClientRect();
-        clickX = heartRect.left + heartRect.width / 2;
-        clickY = heartRect.top + heartRect.height / 2;
-        this.log('info', `找到红心按钮，点击红心位置`);
-      } else {
-        // 没有找到红心，点击视频中央偏下位置
-        // 随机偏移范围 40-80px，模拟真人操作
-        const offsetX = 40 + Math.random() * 40;
-        const offsetY = 40 + Math.random() * 40;
-        
-        const dirX = Math.random() > 0.5 ? 1 : -1;
-        const dirY = Math.random() > 0.5 ? 1 : -1;
-        
-        clickX = rect.left + rect.width / 2 + offsetX * dirX;
-        clickY = rect.top + rect.height * 0.65 + offsetY * dirY;
-        
-        clickX = Math.max(rect.left + 20, Math.min(rect.right - 20, clickX));
-        clickY = Math.max(rect.top + 20, Math.min(rect.bottom - 20, clickY));
-      }
+      // 随机偏移 20-50px，模拟真人操作的不精确性
+      const offsetX = 20 + Math.random() * 30;
+      const offsetY = 20 + Math.random() * 30;
       
-      this.log('info', `双击位置: X=${Math.round(clickX)}, Y=${Math.round(clickY)}`);
+      const dirX = Math.random() > 0.5 ? 1 : -1;
+      const dirY = Math.random() > 0.5 ? 1 : -1;
       
-      // 优先点击红心按钮
-      let success = false;
-      if (heartBtn) {
-        success = await this.simulateDoubleClick(heartBtn, clickX, clickY);
-      }
+      clickX += offsetX * dirX;
+      clickY += offsetY * dirY;
       
-      if (!success) {
-        success = await this.simulateDoubleClick(container, clickX, clickY);
-      }
+      // 确保点击在视频范围内
+      clickX = Math.max(rect.left + 5, Math.min(rect.right - 5, clickX));
+      clickY = Math.max(rect.top + 5, Math.min(rect.bottom - 5, clickY));
       
-      if (!success) {
-        success = await this.simulateDoubleClick(video, clickX, clickY);
-      }
+      this.log('info', `执行点赞: X=${Math.round(clickX)}, Y=${Math.round(clickY)}`);
       
-      if (success) {
-        this.state.totalLikes++;
-        this.state.todayLikes++;
-        this.state.lastMinuteLikes++;
-        
-        this.log('success', '点赞成功', {
-          total: this.state.totalLikes,
-          today: this.state.todayLikes
-        });
-        
-        this.emit('like:success', {
-          count: this.state.totalLikes,
-          today: this.state.todayLikes
-        });
-      } else {
-        this.log('warning', '点赞事件未触发');
-      }
+      // 执行双击
+      await this.doubleClickAt(clickX, clickY);
+      
+      // 更新统计
+      this.state.totalLikes++;
+      this.state.todayLikes++;
+      this.state.lastMinuteLikes++;
+      
+      this.log('success', '点赞完成', { total: this.state.totalLikes });
+      
+      this.emit('like:success', {
+        count: this.state.totalLikes,
+        today: this.state.todayLikes
+      });
       
     } catch (error) {
-      this.log('error', '点赞失败', { error: error.message });
-      this.emit('like:error', { error: error.message });
+      this.log('error', '点赞异常: ' + error.message);
+    }
+  }
+  
+  /**
+   * 在指定位置执行双击
+   */
+  async doubleClickAt(x, y) {
+    // 使用 dispatchEvent 触发事件
+    const target = document.elementFromPoint(x, y);
+    
+    if (!target) {
+      this.log('warning', '未找到点击目标元素');
+      return;
+    }
+    
+    this.log('info', `点击元素: <${target.tagName.toLowerCase()}>`);
+    
+    // 完整的鼠标事件序列
+    const events = [
+      { type: 'mousedown', bx: 0, bd: 1 },
+      { type: 'mouseup', bx: 0, bd: 0 },
+      { type: 'click', bx: 0, bd: 0, det: 1 },
+      { type: 'mousedown', bx: 0, bd: 1 },
+      { type: 'mouseup', bx: 0, bd: 0 },
+      { type: 'click', bx: 0, bd: 0, det: 1 },
+      { type: 'dblclick', bx: 0, bd: 0, det: 2 }
+    ];
+    
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      
+      const event = new MouseEvent(ev.type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: x,
+        clientY: y,
+        screenX: x + window.screenX,
+        screenY: y + window.screenY,
+        button: ev.bx,
+        buttons: ev.bd,
+        detail: ev.det || 1
+      });
+      
+      target.dispatchEvent(event);
+      
+      // 双击间隔 80-120ms
+      if (i === 2) {
+        await this.delay(80 + Math.random() * 40);
+      } else if (i < events.length - 1) {
+        await this.delay(10 + Math.random() * 15);
+      }
     }
   }
   
@@ -303,81 +328,6 @@ class AutoLike {
            style.display !== 'none' && 
            style.visibility !== 'hidden' &&
            style.opacity !== '0';
-  }
-  
-  /**
-   * 查找红心点赞按钮
-   */
-  findHeartButton() {
-    const selectors = [
-      '[data-e2e="live-like"]',
-      '[class*="like-btn"]',
-      '[class*="heart"]',
-      '.like-button',
-      '.heart-btn',
-      '[class*="like-icon"]'
-    ];
-    
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el && this.isVisible(el)) {
-        const rect = el.getBoundingClientRect();
-        if (rect.width > 20 && rect.height > 20) {
-          return el;
-        }
-      }
-    }
-    
-    return null;
-  }
-  
-  /**
-   * 模拟双击事件
-   * @returns {boolean} 是否成功触发点击
-   */
-  async simulateDoubleClick(element, x, y) {
-    try {
-      // 第一下点击
-      await this.dispatchMouseEvent(element, 'mousedown', x, y, 1);
-      await this.delay(30 + Math.random() * 40);
-      await this.dispatchMouseEvent(element, 'mouseup', x, y, 1);
-      await this.delay(10 + Math.random() * 20);
-      await this.dispatchMouseEvent(element, 'click', x, y, 1);
-      
-      // 第二下点击（模拟真人双击间隔 80-150ms）
-      await this.delay(80 + Math.random() * 70);
-      await this.dispatchMouseEvent(element, 'mousedown', x, y, 2);
-      await this.delay(30 + Math.random() * 40);
-      await this.dispatchMouseEvent(element, 'mouseup', x, y, 2);
-      await this.delay(10 + Math.random() * 20);
-      await this.dispatchMouseEvent(element, 'click', x, y, 2);
-      await this.dispatchMouseEvent(element, 'dblclick', x, y, 2);
-      
-      return true;
-    } catch (error) {
-      this.log('error', '模拟点击失败', { error: error.message });
-      return false;
-    }
-  }
-  
-  /**
-   * 派发鼠标事件
-   */
-  async dispatchMouseEvent(element, type, x, y, detail) {
-    const event = new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: x,
-      clientY: y,
-      screenX: x + window.screenX,
-      screenY: y + window.screenY,
-      button: 0,
-      buttons: 1,
-      detail: detail
-    });
-    
-    element.dispatchEvent(event);
   }
   
   /**

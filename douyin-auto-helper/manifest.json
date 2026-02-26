@@ -1,22 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "大宝抖音全自动中控助手",
-  "version": "1.0.0",
-  "description": "抖音直播间自动点赞、自动评论工具",
+  "name": "大宝抖音AI托评助手",
+  "version": "3.0.0",
+  "description": "抖音直播间AI智能评论、自动点赞工具，接入DeepSeek大模型，支持会员系统",
   "author": "大宝",
   "homepage_url": "https://github.com/yourusername/douyin-auto-helper",
-  
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
   },
-  
   "content_scripts": [
     {
       "matches": [
@@ -29,29 +26,31 @@
       "all_frames": false
     }
   ],
-  
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
-  
   "host_permissions": [
-    "https://live.douyin.com/*"
+    "https://live.douyin.com/*",
+    "https://api.deepseek.com/*",
+    "https://*/*",
+    "http://*/*"
   ],
-  
   "web_accessible_resources": [
     {
       "resources": [
         "src/styles/*",
-        "icons/*"
+        "icons/*",
+        "images/*",
+        "src/license.js"
       ],
       "matches": [
         "https://live.douyin.com/*"
       ]
     }
   ],
-  
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }

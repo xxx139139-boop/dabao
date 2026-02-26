@@ -1,13 +1,12 @@
 /**
- * 大宝抖音自动中控助手
- * Background Service Worker (Chrome 144 MV3)
+ * 大宝抖音AI托评助手
+ * Background Service Worker (Chrome MV3)
+ * v2.1.0 - 支持DeepSeek AI智能评论
  */
 
 // Service Worker 安装
 chrome.runtime.onInstalled.addListener((details) => {
-  console.log('[大宝抖音助手] 扩展已安装/更新', details);
-  
-  // 初始化默认配置
+  console.log('[大宝AI助手] 扩展已安装/更新', details);
   initializeDefaultConfig();
 });
 
@@ -16,15 +15,14 @@ async function initializeDefaultConfig() {
   const defaultConfig = {
     // 点赞配置
     likeEnabled: false,
-    likeMinPerMinute: 10,
+    likeMinPerMinute: 20,
     likeMaxPerMinute: 50,
     
-    // 评论配置
-    commentEnabled: false,
+    // AI评论配置
+    aiCommentEnabled: false,
     commentInterval: 90,
-    commentMode: 'random',
-    comments: [],
-    smartHistorySize: 10,
+    aiPrompt: '请根据以下文字和图片内容，以一个真实准备购买的35-55岁买家人设风格生成一条15个字以内的抖音直播间弹幕，只输出弹幕内容本身，不要任何解释',
+    aiApiKey: 'sk-db818c2234504dd8a0723772aae6e420',
     
     // UI配置
     sidebarWidth: 400,
@@ -44,26 +42,30 @@ async function initializeDefaultConfig() {
     
     if (!stored.config) {
       await chrome.storage.local.set({ config: defaultConfig });
-      console.log('[大宝抖音助手] 已初始化默认配置');
+      console.log('[大宝AI助手] 已初始化默认配置');
+    } else {
+      // 合并新字段到旧配置
+      const merged = { ...defaultConfig, ...stored.config };
+      await chrome.storage.local.set({ config: merged });
     }
     
     if (!stored.stats) {
       await chrome.storage.local.set({ stats: defaultStats });
-      console.log('[大宝抖音助手] 已初始化默认统计');
+      console.log('[大宝AI助手] 已初始化默认统计');
     }
   } catch (error) {
-    console.error('[大宝抖音助手] 初始化失败:', error);
+    console.error('[大宝AI助手] 初始化失败:', error);
   }
 }
 
 // 监听来自 content script 的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[大宝抖音助手] 收到消息:', request.action, '来自:', sender.tab?.url);
+  console.log('[大宝AI助手] 收到消息:', request.action, '来自:', sender.tab?.url);
   
   switch (request.action) {
     case 'GET_CONFIG':
       handleGetConfig(sendResponse);
-      return true; // 保持消息通道开放
+      return true;
       
     case 'SET_CONFIG':
       handleSetConfig(request.config, sendResponse);
@@ -88,6 +90,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'CLEAR_LOGS':
       handleClearLogs(sendResponse);
       return true;
+    
+    case 'CALL_DEEPSEEK_API':
+      handleDeepSeekApiCall(request.payload, request.apiKey, sendResponse);
+      return true;
       
     default:
       sendResponse({ success: false, error: '未知操作' });
@@ -95,13 +101,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// 调用 DeepSeek API（在background中代理，绕过CORS限制）
+async function handleDeepSeekApiCall(payload, apiKey, sendResponse) {
+  try {
+    console.log('[大宝AI助手] 调用DeepSeek API...');
+    
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[大宝AI助手] DeepSeek API错误:', response.status, errText);
+      sendResponse({ success: false, error: `API错误 ${response.status}: ${errText}` });
+      return;
+    }
+    
+    const data = await response.json();
+    console.log('[大宝AI助手] DeepSeek API响应成功');
+    sendResponse({ success: true, data });
+    
+  } catch (error) {
+    console.error('[大宝AI助手] DeepSeek API调用失败:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
 // 获取配置
 async function handleGetConfig(sendResponse) {
   try {
     const data = await chrome.storage.local.get('config');
     sendResponse({ success: true, config: data.config });
   } catch (error) {
-    console.error('[大宝抖音助手] 获取配置失败:', error);
+    console.error('[大宝AI助手] 获取配置失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -110,10 +147,10 @@ async function handleGetConfig(sendResponse) {
 async function handleSetConfig(config, sendResponse) {
   try {
     await chrome.storage.local.set({ config });
-    console.log('[大宝抖音助手] 配置已保存');
+    console.log('[大宝AI助手] 配置已保存');
     sendResponse({ success: true });
   } catch (error) {
-    console.error('[大宝抖音助手] 保存配置失败:', error);
+    console.error('[大宝AI助手] 保存配置失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -123,7 +160,6 @@ async function handleGetStats(sendResponse) {
   try {
     const data = await chrome.storage.local.get('stats');
     
-    // 检查是否需要重置今日统计
     const today = new Date().toISOString().split('T')[0];
     if (data.stats && data.stats.lastResetDate !== today) {
       data.stats.todayLikes = 0;
@@ -134,7 +170,7 @@ async function handleGetStats(sendResponse) {
     
     sendResponse({ success: true, stats: data.stats });
   } catch (error) {
-    console.error('[大宝抖音助手] 获取统计失败:', error);
+    console.error('[大宝AI助手] 获取统计失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -145,7 +181,7 @@ async function handleUpdateStats(stats, sendResponse) {
     await chrome.storage.local.set({ stats });
     sendResponse({ success: true });
   } catch (error) {
-    console.error('[大宝抖音助手] 更新统计失败:', error);
+    console.error('[大宝AI助手] 更新统计失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -156,7 +192,7 @@ async function handleGetLogs(sendResponse) {
     const data = await chrome.storage.local.get('logs');
     sendResponse({ success: true, logs: data.logs || [] });
   } catch (error) {
-    console.error('[大宝抖音助手] 获取日志失败:', error);
+    console.error('[大宝AI助手] 获取日志失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -167,14 +203,12 @@ async function handleAddLog(log, sendResponse) {
     const data = await chrome.storage.local.get('logs');
     const logs = data.logs || [];
     
-    // 添加新日志
     logs.unshift({
       id: generateUUID(),
       time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
       ...log
     });
     
-    // 只保留最近100条
     if (logs.length > 100) {
       logs.length = 100;
     }
@@ -182,7 +216,7 @@ async function handleAddLog(log, sendResponse) {
     await chrome.storage.local.set({ logs });
     sendResponse({ success: true });
   } catch (error) {
-    console.error('[大宝抖音助手] 添加日志失败:', error);
+    console.error('[大宝AI助手] 添加日志失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -191,10 +225,10 @@ async function handleAddLog(log, sendResponse) {
 async function handleClearLogs(sendResponse) {
   try {
     await chrome.storage.local.set({ logs: [] });
-    console.log('[大宝抖音助手] 日志已清空');
+    console.log('[大宝AI助手] 日志已清空');
     sendResponse({ success: true });
   } catch (error) {
-    console.error('[大宝抖音助手] 清空日志失败:', error);
+    console.error('[大宝AI助手] 清空日志失败:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -210,13 +244,13 @@ function generateUUID() {
 
 // Service Worker 激活时清理旧日志
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[大宝抖音助手] Service Worker 已启动');
+  console.log('[大宝AI助手] Service Worker 已启动');
 });
 
-// 保持 Service Worker 活跃（Chrome 144 优化）
+// 保持 Service Worker 活跃
 chrome.alarms?.create('keepAlive', { periodInMinutes: 4.9 });
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepAlive') {
-    console.log('[大宝抖音助手] 保持活跃');
+    console.log('[大宝AI助手] 保持活跃');
   }
 });
